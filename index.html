@@ -222,6 +222,33 @@
     </div>
   </div>
 
+  <!-- MODE PICK SCREEN -->
+  <div class="screen" id="screen-modepick">
+    <div class="title-block">
+      <div class="stage" id="modepickStage">Cupcake Counter</div>
+      <h1>Choose your challenge</h1>
+    </div>
+    <div class="player-picks">
+      <button class="player-card" id="modeArithmetic" data-submode="arithmetic">
+        <div class="emoji">🔢</div>
+        <div class="label">
+          <div class="name">Number Speedrun</div>
+          <div class="desc" id="modeArithDesc">Adding &amp; counting treats</div>
+        </div>
+        <div class="arrow">→</div>
+      </button>
+      <button class="player-card" id="modePattern" data-submode="pattern">
+        <div class="emoji">🧩</div>
+        <div class="label">
+          <div class="name">Pattern Detective</div>
+          <div class="desc" id="modePatternDesc">Spot what comes next</div>
+        </div>
+        <div class="arrow">→</div>
+      </button>
+    </div>
+    <a class="back-link" id="modepickBack">← choose a different player</a>
+  </div>
+
   <!-- GAME SCREEN -->
   <div class="screen" id="screen-game">
     <div class="hud">
@@ -276,6 +303,7 @@
   const body = document.body;
   const screens = {
     start: document.getElementById('screen-start'),
+    modepick: document.getElementById('screen-modepick'),
     game: document.getElementById('screen-game'),
     end: document.getElementById('screen-end'),
   };
@@ -285,6 +313,8 @@
   }
 
   let mode = 'food'; // 'food' (grade1) or 'ballet' (grade4)
+  let subMode = 'arithmetic'; // 'arithmetic' or 'pattern'
+  let chosenPlayer = 'food';
   let score = 0, streak = 0, bestStreak = 0, solved = 0;
   let timeLeft = GAME_LENGTH, timerId = null;
   let current = null; // {text, answer, visual}
@@ -306,6 +336,8 @@
 
   const foodTickets = ['Order up!','Fresh batch!','Bakery counter','Sweet delivery','Tasty tally'];
   const balletTickets = ['Center stage','Warm-up combo','Rehearsal drill','Spotlight sum','Encore round'];
+  const foodPatternTickets = ['Spot the pattern!','What comes next?','Pattern hunt','Sweet sequence'];
+  const balletPatternTickets = ['Find the rule','Pattern rehearsal','Sequence spotlight','Logic combo'];
 
   function rnd(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 
@@ -331,7 +363,7 @@
       if(val >= 0 && val !== answer) opts.add(val);
     }
     return {
-      text: `${a} ${opSym} ${b}`,
+      display: `${a} ${opSym} ${b} =`,
       answer,
       visual,
       choices: shuffle([...opts]),
@@ -354,7 +386,78 @@
       b = rnd(2,10); answer = rnd(2,12); a = b*answer; opSym = '÷';
     }
     return {
-      text: `${a} ${opSym} ${b}`,
+      display: `${a} ${opSym} ${b} =`,
+      answer,
+      visual:'',
+      mode:'type'
+    };
+  }
+
+  function genFoodPatternProblem(){
+    // Grade 1: skip-counting sequences, or a repeating two-item emoji pattern — both tap-to-answer
+    const patternType = rnd(0,1);
+    if(patternType === 0){
+      const step = [1,2,5,10][rnd(0,3)];
+      const start = rnd(0,10);
+      const seq = [start, start+step, start+step*2, start+step*3];
+      const answer = start + step*4;
+      const opts = new Set([answer]);
+      while(opts.size < 4){
+        const delta = rnd(-2,2) * step || step;
+        const val = answer + delta;
+        if(val >= 0 && val !== answer) opts.add(val);
+      }
+      return {
+        display: seq.join(' , ') + ' , ?',
+        answer,
+        visual:'',
+        choices: shuffle([...opts]),
+        mode:'choice'
+      };
+    } else {
+      let e1 = foodEmojis[rnd(0,foodEmojis.length-1)];
+      let e2 = foodEmojis[rnd(0,foodEmojis.length-1)];
+      while(e2 === e1) e2 = foodEmojis[rnd(0,foodEmojis.length-1)];
+      const seq = [e1,e2,e1,e2,e1]; // next should be e2
+      const answer = e2;
+      const wrongPool = foodEmojis.filter(e => e!==e1 && e!==e2);
+      const opts = new Set([answer]);
+      while(opts.size < 4){
+        opts.add(wrongPool[rnd(0,wrongPool.length-1)]);
+      }
+      return {
+        display: '',
+        answer,
+        visual: seq.join('') + '❓',
+        choices: shuffle([...opts]),
+        mode:'choice'
+      };
+    }
+  }
+
+  function genBalletPatternProblem(){
+    // Grade 4: skip-count sequences (incl. descending), doubling sequences, or Fibonacci-style sum rules — typed answer
+    const type = rnd(0,2);
+    let seq = [], answer;
+    if(type === 0){
+      const step = [3,4,6,7,8,9,11,12][rnd(0,7)];
+      const descending = Math.random() < 0.4;
+      const start = rnd(8,45);
+      for(let i=0;i<4;i++) seq.push(descending ? start - step*i : start + step*i);
+      answer = descending ? start - step*4 : start + step*4;
+    } else if(type === 1){
+      const start = rnd(2,6);
+      seq = [start];
+      for(let i=1;i<4;i++) seq.push(seq[i-1]*2);
+      answer = seq[3]*2;
+    } else {
+      const a = rnd(1,5), b = rnd(a+1, a+6);
+      seq = [a,b];
+      for(let i=2;i<4;i++) seq.push(seq[i-1]+seq[i-2]);
+      answer = seq[2] + seq[3];
+    }
+    return {
+      display: seq.join(' , ') + ' , ?',
       answer,
       visual:'',
       mode:'type'
@@ -370,14 +473,20 @@
   }
 
   function nextProblem(){
-    current = mode === 'food' ? genFoodProblem() : genBalletProblem();
+    if(subMode === 'arithmetic'){
+      current = mode === 'food' ? genFoodProblem() : genBalletProblem();
+    } else {
+      current = mode === 'food' ? genFoodPatternProblem() : genBalletPatternProblem();
+    }
     currentAnswer = '';
-    problemText.textContent = current.text + ' =';
+    problemText.textContent = current.display;
     visualRow.textContent = current.visual || '';
     feedback.textContent = '\u00A0';
     feedback.className = 'feedback';
 
-    const tickets = mode === 'food' ? foodTickets : balletTickets;
+    let tickets;
+    if(subMode === 'arithmetic') tickets = mode === 'food' ? foodTickets : balletTickets;
+    else tickets = mode === 'food' ? foodPatternTickets : balletPatternTickets;
     ticketLabel.textContent = tickets[rnd(0,tickets.length-1)];
 
     if(current.mode === 'choice'){
@@ -404,7 +513,7 @@
     btnEl.classList.add(correct ? 'correct-flash' : 'wrong-flash');
     if(!correct){
       Array.from(choicesWrap.children).forEach(b=>{
-        if(parseInt(b.textContent,10) === current.answer) b.classList.add('correct-flash');
+        if(b.textContent === String(current.answer)) b.classList.add('correct-flash');
       });
     }
     registerResult(correct);
@@ -450,8 +559,9 @@
     answerInput.value = currentAnswer;
   });
 
-  function startGame(chosenMode){
+  function startGame(chosenMode, chosenSubMode){
     mode = chosenMode;
+    subMode = chosenSubMode || subMode;
     body.className = 'theme-' + mode;
     score = 0; streak = 0; bestStreak = 0; solved = 0; timeLeft = GAME_LENGTH;
     scoreEl.textContent = 0; streakEl.textContent = 0;
@@ -485,14 +595,32 @@
       : (starCount === 3 ? 'Prima ballerina!' : starCount === 2 ? 'Beautiful form!' : 'Great rehearsal!');
   }
 
-  document.querySelectorAll('.player-card').forEach(card=>{
-    card.addEventListener('click', ()=> startGame(card.getAttribute('data-player')));
+  function openModePick(player){
+    chosenPlayer = player;
+    const arithCard = document.getElementById('modeArithmetic');
+    const patternCard = document.getElementById('modePattern');
+    arithCard.classList.remove('food','ballet');
+    patternCard.classList.remove('food','ballet');
+    arithCard.classList.add(player);
+    patternCard.classList.add(player);
+    document.getElementById('modepickStage').textContent = player === 'food' ? 'Cupcake Counter' : 'Ballet Bootcamp';
+    document.getElementById('modeArithDesc').textContent = player === 'food' ? 'Adding & counting treats' : 'Times tables & big sums';
+    document.getElementById('modePatternDesc').textContent = player === 'food' ? 'Spot what comes next' : 'Crack the number rule';
+    showScreen('modepick');
+  }
+
+  document.querySelectorAll('#screen-start .player-card').forEach(card=>{
+    card.addEventListener('click', ()=> openModePick(card.getAttribute('data-player')));
   });
+  document.querySelectorAll('#screen-modepick .player-card').forEach(card=>{
+    card.addEventListener('click', ()=> startGame(chosenPlayer, card.getAttribute('data-submode')));
+  });
+  document.getElementById('modepickBack').addEventListener('click', ()=> showScreen('start'));
   document.getElementById('quitLink').addEventListener('click', ()=>{
     clearInterval(timerId);
     showScreen('start');
   });
-  document.getElementById('playAgainBtn').addEventListener('click', ()=> startGame(mode));
+  document.getElementById('playAgainBtn').addEventListener('click', ()=> startGame(mode, subMode));
   document.getElementById('switchBtn').addEventListener('click', ()=> showScreen('start'));
 
 })();
