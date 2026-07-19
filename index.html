@@ -442,7 +442,8 @@
     if(type === 0){
       const step = [3,4,6,7,8,9,11,12][rnd(0,7)];
       const descending = Math.random() < 0.4;
-      const start = rnd(8,45);
+      // start high enough that a descending run of 5 terms (start, start-4*step) never goes negative
+      const start = descending ? rnd(step*4, step*4 + 40) : rnd(5,40);
       for(let i=0;i<4;i++) seq.push(descending ? start - step*i : start + step*i);
       answer = descending ? start - step*4 : start + step*4;
     } else if(type === 1){
